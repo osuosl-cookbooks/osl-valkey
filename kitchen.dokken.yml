@@ -1,0 +1,25 @@
+---
+driver:
+  name: dokken
+  privileged: true  # because Docker and SystemD/Upstart
+  chef_version: <%= ENV['CHEF_VERSION'] || '18' %>
+  ipv6: true
+
+transport:
+  name: dokken
+
+provisioner:
+  name: dokken
+  product_name: cinc
+  enforce_idempotency: true
+
+platforms:
+  - name: almalinux-9
+    driver:
+      image: dokken/almalinux-9
+      pid_one_command: /usr/lib/systemd/systemd
+
+  - name: almalinux-10
+    driver:
+      image: dokken/almalinux-10
+      pid_one_command: /usr/lib/systemd/systemd

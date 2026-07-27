@@ -1,0 +1,12 @@
+name              'osl-valkey'
+maintainer        'Oregon State University'
+maintainer_email  'chef@osuosl.org'
+license           'All Rights Reserved'
+description       'Installs/Configures osl-valkey'
+issues_url        'https://github.com/osuosl-cookbooks/osl-valkey/issues'
+source_url        'https://github.com/osuosl-cookbooks/osl-valkey'
+chef_version      '>= 18.0'
+version           '0.1.0'
+
+supports          'almalinux', '~> 9.0'
+supports          'almalinux', '~> 10.0'
