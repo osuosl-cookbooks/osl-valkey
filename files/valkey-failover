@@ -1,0 +1,108 @@
+#!/opt/cinc/embedded/bin/ruby
+# Orchestrated manual failover for maintenance, ported from the
+# ha-valkey ansible role's redis-failover.py and adapted to a plain
+# sentinel deployment (no haproxy layer to drain): preflight the
+# replica set, ask sentinel to fail over, wait for the switch, then
+# report the old primary's demotion. Prefer this over stopping the
+# primary when you need to patch or reboot it.
+require 'optparse'
+require '/usr/local/lib/valkey_tools'
+
+options = { service: nil, sentinel_port: ValkeyTools::SENTINEL_PORT, yes: false, timeout: 60 }
+OptionParser.new do |o|
+  o.banner = 'Usage: valkey-failover [--service NAME] [--yes] [--timeout SECONDS]'
+  o.on('--service NAME', 'sentinel service name (default: the only monitored one)') { |v| options[:service] = v }
+  o.on('--sentinel-port PORT', Integer, 'sentinel port (default 26379)') { |v| options[:sentinel_port] = v }
+  o.on('-y', '--yes', 'skip the confirmation prompt') { options[:yes] = true }
+  o.on('--timeout SECONDS', Integer, 'how long to wait for the switch (default 60)') { |v| options[:timeout] = v }
+  o.on('-h', '--help', 'show this help') do
+    puts o
+    exit
+  end
+end.parse!
+
+sport = options[:sentinel_port]
+unless ValkeyTools.config_readable?
+  abort "ERROR: cannot read #{ValkeyTools::VALKEY_CONF}; run this as root on a node running valkey-server."
+end
+
+service = ValkeyTools.resolve_service(options[:service], port: sport)
+pass = ValkeyTools.auth_pass
+
+master = ValkeyTools.master_details(service, port: sport)
+old_host, old_port = master['ip'], master['port']
+
+# Preflight: quorum reachable, primary reachable, at least one replica
+# connected, and every replica has acknowledged all writes.
+ck, ck_ok = ValkeyTools.sentinel(['ckquorum', service], port: sport)
+abort "ERROR: no failover authorization: #{ck}" unless ck_ok
+
+info = ValkeyTools.info_replication(old_host, old_port, pass)
+abort "ERROR: cannot reach the current primary #{old_host}:#{old_port}." unless info
+replicas = info['connected_slaves'].to_i
+abort 'ERROR: the primary has no connected replicas to fail over to.' if replicas < 1
+
+acked, ok = ValkeyTools.cli(['wait', replicas, 5000], host: old_host, port: old_port, pass: pass)
+unless ok && acked.to_i >= replicas
+  abort "ERROR: only #{acked.to_i}/#{replicas} replicas acknowledged all writes; check replication lag."
+end
+
+puts "Service:      #{service}"
+puts "Primary:      #{old_host}:#{old_port}"
+puts "Replicas:     #{replicas} connected, all acknowledged"
+
+unless options[:yes]
+  print 'Proceed with failover? Confirm with yes: '
+  abort 'Canceled.' unless $stdin.gets&.strip&.casecmp('yes')&.zero?
+end
+
+out, ok = ValkeyTools.sentinel(['failover', service], port: sport)
+abort "ERROR: sentinel refused the failover: #{out}" unless ok && out == 'OK'
+
+start = Time.now
+new_addr = nil
+loop do
+  sleep 0.5
+  current = ValkeyTools.master_details(service, port: sport)
+  addr = [current['ip'], current['port']]
+  if addr != [old_host, old_port]
+    new_addr = addr
+    break
+  end
+  abort "ERROR: primary did not change within #{options[:timeout]}s." if Time.now - start > options[:timeout]
+end
+puts format('New primary:  %s:%s (switched in %.1fs)', new_addr[0], new_addr[1], Time.now - start)
+
+# The old primary should rejoin as a replica once sentinel reconfigures
+# it, and then finish syncing. Both halves matter: it is demoted a
+# moment before its replication link comes up, and reporting success in
+# that window would tell the operator the cluster is ready to lose a
+# node when it has no caught-up replacement replica yet.
+demoted = false
+reachable = true
+until Time.now - start > options[:timeout]
+  info = ValkeyTools.info_replication(old_host, old_port, pass)
+  reachable = !info.nil?
+  if info
+    demoted ||= info['role'] == 'slave'
+    if demoted && info['master_link_status'] == 'up'
+      puts 'Old primary:  demoted to replica, link up'
+      exit 0
+    end
+  end
+  sleep 1
+end
+
+# Anything reached here leaves the cluster one member short of the
+# replica set it started with, so none of it is a success. The preflight
+# proved this node was reachable, so losing it during the switch is an
+# anomaly rather than the operator having stopped it: maintenance is
+# meant to happen after this returns, not before.
+puts(if !reachable
+       'Old primary:  went unreachable during the failover; it is not a replica of the new primary, check it before relying on this cluster.'
+     elsif demoted
+       'Old primary:  demoted to replica, but its link is still down; it is not a usable replacement yet.'
+     else
+       'Old primary:  still reports role:master; check it before ending the maintenance.'
+     end)
+exit 2

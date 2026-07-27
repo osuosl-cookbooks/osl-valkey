@@ -1,0 +1,13 @@
+# Inputs for every member of the multi-node cluster (see main.tf for
+# the addresses and valkey_test::cluster for what it configures).
+valkey_pass: multi-node-test
+appendonly: 'yes'
+maxmemory_policy: noeviction
+min_replicas_to_write: 1
+sentinel: true
+service_name: testlocks
+quorum: 2
+sentinel_count: 3
+sentinel_replicas: 2
+primary_ip: 10.1.0.11
+members: 10.1.0.11,10.1.0.12,10.1.0.13

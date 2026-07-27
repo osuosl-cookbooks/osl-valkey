@@ -1,0 +1,89 @@
+---
+provisioner:
+  name: terraform
+
+driver:
+  name: terraform
+  command_timeout: 3600
+
+verifier:
+  name: terraform
+  # Every system runs the same profile as the single-node suites and
+  # adds the cluster controls; attrs carry the topology inputs.
+  systems:
+    - name: valkey1
+      backend: ssh
+      hosts_output: valkey1
+      sudo: true
+      user: almalinux
+      profile_locations:
+        - test/integration/valkey
+      attrs:
+        - test/integration/attrs/cluster.yml
+      controls:
+        - server
+        - firewall
+        - sentinel
+        - cluster
+        - replication
+
+    - name: valkey2
+      backend: ssh
+      hosts_output: valkey2
+      sudo: true
+      user: almalinux
+      profile_locations:
+        - test/integration/valkey
+      attrs:
+        - test/integration/attrs/cluster.yml
+      controls:
+        - server
+        - firewall
+        - sentinel
+        - cluster
+
+    - name: valkey3
+      backend: ssh
+      hosts_output: valkey3
+      sudo: true
+      user: almalinux
+      profile_locations:
+        - test/integration/valkey
+      attrs:
+        - test/integration/attrs/cluster.yml
+      controls:
+        - server
+        - firewall
+        - sentinel
+        - cluster
+
+    # Runs against valkey1 again, deliberately last: it moves the
+    # primary, and the checks above read better against a settled
+    # cluster. They pass either way - nothing above assumes which
+    # member is primary - so re-verifying needs no rebuild.
+    - name: failover
+      backend: ssh
+      hosts_output: valkey1
+      sudo: true
+      user: almalinux
+      profile_locations:
+        - test/integration/valkey
+      attrs:
+        - test/integration/attrs/cluster.yml
+      controls:
+        - failover
+
+platforms:
+  - name: almalinux-9
+    driver:
+      variables:
+        os_image: "AlmaLinux 9"
+        ssh_user_name: "almalinux"
+  - name: almalinux-10
+    driver:
+      variables:
+        os_image: "AlmaLinux 10"
+        ssh_user_name: "almalinux"
+
+suites:
+  - name: multi-node

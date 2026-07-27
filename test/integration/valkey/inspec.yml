@@ -1,0 +1,14 @@
+---
+name: valkey
+version: 0.1.0
+# One profile for every suite. Each kitchen suite (and each multi-node
+# system) selects the controls that apply to it and passes inputs for
+# whatever it configured, so nothing is asserted twice:
+#
+#   server    every valkey server, driven by inputs
+#   firewall  the ports osl_firewall_port opened
+#   sentinel  every sentinel, plus the operator tooling it installs
+#   cluster   multi-node only: cross-member state
+#   primary   multi-node only: the seeded primary
+#   replica   multi-node only: the seeded replicas
+#   failover  multi-node only: a real orchestrated failover, runs last

@@ -1,6 +1,6 @@
 #
-# Cookbook:: osl-valkey
-# Recipe:: default
+# Cookbook:: valkey_test
+# Recipe:: replica
 #
 # Copyright:: 2026, Oregon State University
 #
@@ -15,4 +15,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-osl_valkey 'default'
+
+# A clustered member shape (spec-only): replica of a primary, with the
+# split-brain write guard a multi-node deployment should carry.
+osl_valkey 'default' do
+  pass 'valkey-test'
+  replicaof 'valkey1.example.org'
+  min_replicas_to_write 1
+  min_replicas_max_lag 5
+end

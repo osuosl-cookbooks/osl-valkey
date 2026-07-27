@@ -1,0 +1,31 @@
+# Seeded by Chef; sentinel rewrites this file at runtime (myid, config
+# epoch, known replicas and sentinels, failover state), so chef only
+# re-renders it when config_version changes.
+<% if @bind -%>
+bind <%= @bind %>
+<% end -%>
+port <%= @port %>
+<% if @requirepass -%>
+requirepass <%= @requirepass %>
+protected-mode yes
+<% else -%>
+# Sentinel can require a password, but only clients able to send one
+# can then reach it (tooz 2.10.1, the OpenStack lock client, cannot).
+# With none set, the firewall is the only guard on this port.
+protected-mode no
+<% end -%>
+dir /var/lib/valkey
+logfile /var/log/valkey/sentinel.log
+<% if @resolve_hostnames -%>
+sentinel resolve-hostnames yes
+sentinel announce-hostnames yes
+<% end -%>
+# Runtime reconfiguration of notification scripts is a code-exec vector.
+sentinel deny-scripts-reconfig yes
+sentinel monitor <%= @service_name %> <%= @monitor_host %> <%= @monitor_port %> <%= @quorum %>
+<% if @pass -%>
+sentinel auth-pass <%= @service_name %> <%= @pass %>
+<% end -%>
+sentinel down-after-milliseconds <%= @service_name %> <%= @down_after_ms %>
+sentinel failover-timeout <%= @service_name %> <%= @failover_timeout_ms %>
+sentinel parallel-syncs <%= @service_name %> <%= @parallel_syncs %>

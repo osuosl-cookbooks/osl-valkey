@@ -1,0 +1,61 @@
+#!/opt/cinc/embedded/bin/ruby
+# Status of a sentinel-managed valkey service: sentinel's view (master
+# address, quorum, membership) plus live replication state straight
+# from every member. Ruby port of the ha-valkey ansible role's
+# redis-status.py. Exits non-zero when a member is down or a replica
+# link is broken.
+require 'optparse'
+require '/usr/local/lib/valkey_tools'
+
+options = { service: nil, sentinel_port: ValkeyTools::SENTINEL_PORT }
+OptionParser.new do |o|
+  o.banner = 'Usage: valkey-status [--service NAME] [--sentinel-port PORT]'
+  o.on('--service NAME', 'sentinel service name (default: the only monitored one)') { |v| options[:service] = v }
+  o.on('--sentinel-port PORT', Integer, 'sentinel port (default 26379)') { |v| options[:sentinel_port] = v }
+  o.on('-h', '--help', 'show this help') do
+    puts o
+    exit
+  end
+end.parse!
+
+sport = options[:sentinel_port]
+# Without the local config there is no password, and every member that
+# requires one answers NOAUTH - which would otherwise be reported as a
+# cluster-wide outage rather than as this.
+unless ValkeyTools.config_readable?
+  abort "ERROR: cannot read #{ValkeyTools::VALKEY_CONF}; run this as root on a node running valkey-server."
+end
+
+service = ValkeyTools.resolve_service(options[:service], port: sport)
+master = ValkeyTools.master_details(service, port: sport)
+ck, ck_ok = ValkeyTools.sentinel(['ckquorum', service], port: sport)
+
+puts "Service:  #{service}"
+puts "Primary:  #{master['ip']}:#{master['port']} (flags: #{master['flags']})"
+puts "Quorum:   #{master['quorum']} (#{master['num-other-sentinels'].to_i + 1} sentinels known, ckquorum: #{ck_ok ? 'OK' : 'FAILED'})"
+puts "Replicas: #{master['num-slaves']} known to sentinel"
+puts "ckquorum: #{ck}" unless ck_ok
+puts
+
+pass = ValkeyTools.auth_pass
+members = [[master['ip'], master['port']]] +
+          ValkeyTools.replica_details(service, port: sport).map { |r| [r['ip'], r['port']] }
+
+puts format('%-40s %-8s %-6s %-9s %s', 'MEMBER', 'ROLE', 'LINK', 'REPLICAS', 'OFFSET')
+exit_code = ck_ok ? 0 : 2
+members.each do |host, port|
+  info = ValkeyTools.info_replication(host, port, pass)
+  unless info
+    puts format('%-40s %s', "#{host}:#{port}", 'DOWN or unreachable')
+    exit_code = 2
+    next
+  end
+
+  role = info['role'] == 'slave' ? 'replica' : info['role']
+  link = info['role'] == 'slave' ? info['master_link_status'] : '-'
+  replicas = info['role'] == 'master' ? info['connected_slaves'] : '-'
+  offset = info['master_repl_offset'] || info['slave_repl_offset']
+  exit_code = 2 if info['role'] == 'slave' && link != 'up'
+  puts format('%-40s %-8s %-6s %-9s %s', "#{host}:#{port}", role, link, replicas, offset)
+end
+exit exit_code
