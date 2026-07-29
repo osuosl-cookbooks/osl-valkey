@@ -10,6 +10,8 @@ require 'openssl'
 
 snakeoil_file_path = 'test/integration/data_bags/certificates/snakeoil.json'
 encrypted_data_bag_secret_path = 'test/integration/encrypted_data_bag_secret'
+current_dir = File.dirname(__FILE__)
+client_cfg = "#{current_dir}/test/chef-config"
 
 ##
 # Run command wrapper
@@ -120,6 +122,32 @@ desc 'Run RSpec (unit) tests'
 task :unit do
   run_command('rm -f Berksfile.lock')
   run_command('rspec')
+end
+
+desc 'Vendor your cookbooks/'
+task :berks_vendor do
+  run_command('berks vendor cookbooks')
+end
+
+desc 'Create Chef Key'
+task :create_key do
+  unless File.exist?("#{client_cfg}/validator.pem")
+    File.binwrite("#{client_cfg}/validator.pem", OpenSSL::PKey::RSA.new(2048).to_pem)
+  end
+  unless File.exist?("#{client_cfg}/fakeclient.pem")
+    File.binwrite("#{client_cfg}/fakeclient.pem", OpenSSL::PKey::RSA.new(2048).to_pem)
+  end
+end
+
+# Called by the chef-zero instance in main.tf before any node is
+# bootstrapped for the multi-node suite.
+desc 'Upload data to chef-zero server'
+task knife_upload: [:berks_vendor, :create_key] do
+  run_command('knife upload . --force -c test/chef-config/knife.rb --concurrency 1')
+end
+
+task :destroy_all do
+  run_command('rm -f Gemfile.lock && rm -f Berksfile.lock && rm -rf cookbooks/')
 end
 
 desc 'Run all tests'

@@ -1,0 +1,30 @@
+# Seeded by Chef; valkey rewrites this file at runtime when sentinel
+# changes its replication role, so chef only re-renders it when
+# config_version changes.
+<% if @bind -%>
+bind <%= @bind %>
+<% end -%>
+port <%= @port %>
+protected-mode yes
+dir /var/lib/valkey
+logfile /var/log/valkey/valkey.log
+appendonly <%= @appendonly ? 'yes' : 'no' %>
+<% if @maxmemory_policy -%>
+maxmemory-policy <%= @maxmemory_policy %>
+<% end -%>
+<% if @min_replicas_to_write -%>
+# A primary that loses its replicas goes read-only (split-brain guard).
+min-replicas-to-write <%= @min_replicas_to_write %>
+min-replicas-max-lag <%= @min_replicas_max_lag %>
+<% end -%>
+<% if @pass -%>
+requirepass <%= @pass %>
+# All members carry masterauth so a demoted ex-primary can resync.
+masterauth <%= @pass %>
+<% end -%>
+<% if @replicaof -%>
+replicaof <%= @replicaof %> <%= @replicaof_port %>
+<% end -%>
+<% @config.each do |directive, value| -%>
+<%= directive %> <%= value %>
+<% end -%>

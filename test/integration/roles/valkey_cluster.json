@@ -1,0 +1,9 @@
+{
+  "chef_type": "role",
+  "description": "Multi-node test: one member of the valkey + sentinel cluster",
+  "json_class": "Chef::Role",
+  "name": "valkey_cluster",
+  "run_list": [
+    "recipe[valkey_test::cluster]"
+  ]
+}

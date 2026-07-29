@@ -1,6 +1,6 @@
 #
-# Cookbook:: osl-valkey
-# Recipe:: default
+# Cookbook:: valkey_test
+# Recipe:: sentinel_auth
 #
 # Copyright:: 2026, Oregon State University
 #
@@ -15,4 +15,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-osl_valkey 'default'
+
+# Spec-only: a sentinel that demands a password from its clients and
+# listens on one address. The OpenStack lock tier cannot use this
+# (tooz 2.10.1 has no way to send it), but sentinel supports it and
+# clients that can authenticate should.
+osl_valkey 'default' do
+  pass 'valkey-test'
+  bind '127.0.0.1'
+end
+
+osl_valkey_sentinel 'authlocks' do
+  pass 'valkey-test'
+  requirepass 'sentinel-secret'
+  bind '127.0.0.1'
+end

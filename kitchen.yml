@@ -20,6 +20,34 @@ platforms:
   - name: almalinux-10
 
 suites:
+  # Both suites share the one profile and select the controls that
+  # apply, passing inputs for whatever the run list configured.
   - name: default
     run_list:
       - recipe[osl-valkey::default]
+    verifier:
+      inspec_tests:
+        - test/integration/valkey
+      controls:
+        - server
+        - firewall
+  - name: server_sentinel
+    run_list:
+      - recipe[valkey_test::server_sentinel]
+    verifier:
+      inspec_tests:
+        - test/integration/valkey
+      controls:
+        - server
+        - firewall
+        - sentinel
+      inputs:
+        valkey_pass: valkey-test
+        bind: 127.0.0.1
+        appendonly: 'yes'
+        maxmemory_policy: noeviction
+        extra_config: tcp-keepalive=60
+        sentinel: true
+        service_name: testlocks
+        down_after_ms: 3000
+        failover_timeout_ms: 30000
