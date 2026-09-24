@@ -23,6 +23,10 @@ state back to the seeded topology.
 - AlmaLinux 9 (9.7+)
 - AlmaLinux 10
 
+Wrappers that must also run elsewhere can test `osl_valkey_supported?`
+(true on EL 9.7 and later), a helper this cookbook includes into recipes
+and resources.
+
 ### Cookbooks
 
 - osl-firewall
@@ -49,15 +53,96 @@ end
 
 Other properties: `port` (6379), `replicaof_port` (6379), `bind`
 (rendered as a bind line; default binds all interfaces, guarded by
-protected-mode/auth and the firewall), `min_replicas_to_write` (unset;
+protected-mode/auth and the firewall), `maxmemory` (unset),
+`save` (unset keeps valkey's compiled-in snapshot schedule; `''`
+renders `save ""` and turns snapshots off), `min_replicas_to_write` (unset;
 set to 1 on replicated deployments so an isolated ex-primary goes
 read-only instead of accepting writes the rest of the cluster never
 sees), `min_replicas_max_lag` (10, only rendered with
-`min_replicas_to_write`), `config_version` (1), `firewall` (true,
-opens the port via `osl_firewall_port`), `osl_only` (true).
+`min_replicas_to_write`), `config_version` (1), `instance` (false, see
+below), `firewall` (true, opens the port via `osl_firewall_port`),
+`osl_only` (true).
 
-The resource also sets `vm.overcommit_memory = 1`, recommended by
-valkey for background saves and AOF rewrites.
+`vm.overcommit_memory = 1`, which valkey recommends for background saves
+and AOF rewrites, is set only when the server forks: AOF, snapshots
+(`save` unset or non-empty), `replicaof` or `min_replicas_to_write`. A
+cache with `save ''` and no AOF leaves the host's setting alone; the
+resource never removes it, since another server on the host may need it.
+
+Both `valkey.service` and `valkey-sentinel.service` get a
+`<unit>.d/restart.conf` drop-in with `Restart=on-failure` and
+`RestartSec=5s`; the packaged units have no `Restart=`.
+
+#### Instances
+
+A host runs one packaged `valkey.service`, and every `osl_valkey`
+declaration with `instance false` (the default) configures that one
+server. A second declaration with different settings fails the
+converge rather than being silently ignored, as does a second server
+on a port already in use. Only the keys that differ are named, never
+their values.
+
+With `instance true` the resource name becomes a namespace with its
+own process, so servers with incompatible settings can share a host:
+
+| | `instance false` | `instance true` |
+|---|---|---|
+| unit | `valkey.service` (packaged) | `valkey@<name>.service` (`/etc/systemd/system/valkey@.service`, from this cookbook) |
+| config | `/etc/valkey/valkey.conf` | `/etc/valkey/<name>.conf` |
+| seed marker | `/etc/valkey/.valkey.conf.chef` | `/etc/valkey/.<name>.conf.chef` |
+| data | `/var/lib/valkey` | `/var/lib/valkey/<name>` |
+| log | `/var/log/valkey/valkey.log` | `/var/log/valkey/<name>.log` |
+| firewall chain | `valkey` | `valkey-<name>` |
+
+Give each instance its own `port`. Ports other than 6379, 16379 and
+26379 are labelled `redis_port_t` for SELinux. Names are lower-case
+letters, digits, `-` and `_`, at most 21 characters (the `valkey-<name>`
+firewall chain has a 28-character limit); `valkey` and `sentinel` are
+refused because they would collide with the packaged files.
+
+```ruby
+osl_valkey 'anubis' do
+  instance true
+  port 6390
+  bind '127.0.0.1'
+  firewall false
+  maxmemory '2gb'
+  maxmemory_policy 'allkeys-lru'
+  save ''
+end
+```
+
+The sentinel tooling and osl-openstack's NRPE checks read
+`/etc/valkey/valkey.conf`, so a sentinel-managed tier stays on the
+packaged unit.
+
+osl-prometheus monitors every server without any wiring here. Its
+exporter recipe finds the local servers through the seed markers, reads
+each `port`, `bind` and `requirepass` from the config beside them, and
+registers the scrape targets itself. Keep the marker and config naming
+above stable. Each server also registers itself as
+`node['osl-valkey']['instances'][<name>]` (`port`, `host`, `config`),
+which only supplies the `valkey_instance` label, so the packaged server
+is labelled `coordination` rather than `valkey`.
+
+A change to the `valkey@.service` template (from a new release of this
+cookbook) reloads systemd but doesn't restart running instances.
+Restarting would drop an unpersisted cache, so the new unit takes effect
+at each instance's next restart.
+
+#### Removing a server
+
+`action :delete` stops and disables the unit and removes its seed
+marker, plus the instance config or the packaged unit's restart
+drop-in. Data under `/var/lib/valkey` is kept, the packaged
+`/etc/valkey/valkey.conf` is left in place, and firewall rules stay
+(`osl_firewall_port` has no remove action).
+
+```ruby
+osl_valkey 'anubis' do
+  action :delete  # retires the packaged valkey.service
+end
+```
 
 ### osl_valkey_sentinel
 
@@ -121,9 +206,10 @@ list configured. Nothing is asserted in more than one control:
 
 | control | scope | covers |
 |---|---|---|
-| `server` | any valkey server | package, service, port, seeded file ownership and version marker, `vm.overcommit_memory`, auth (or its absence), and every configured directive read back with `CONFIG GET` |
-| `firewall` | any node | the chain and rule `osl_firewall_port` created, and the absence of the sentinel chain where no sentinel runs |
-| `sentinel` | any sentinel | service, port, seeded directives it preserves across rewrites, monitor settings read back with `SENTINEL MASTER`, quorum, and the operator tooling |
+| `server` | any valkey server | package, service and its `Restart=`, port, seeded file ownership and version marker, `vm.overcommit_memory`, auth (or its absence), and every configured directive read back with `CONFIG GET` |
+| `instances` | `valkey@<name>` units | template unit, each service and its `Restart=`, port and its SELinux label, marker, data dir, and `dir`/`logfile`/configured directives read back with `CONFIG GET` |
+| `firewall` | any node | the chains and rules `osl_firewall_port` created (including instance chains), and the absence of the sentinel chain where no sentinel runs |
+| `sentinel` | any sentinel | service and its `Restart=`, port, seeded directives it preserves across rewrites, monitor settings read back with `SENTINEL MASTER`, quorum, and the operator tooling |
 | `cluster` | multi-node | cross-member reachability, sentinel's current primary, this member's role coherence |
 | `replication` | multi-node, one system | the current primary carries every replica online, the replicas follow it and refuse writes, and a `WAIT`-confirmed write is readable from each of them |
 | `failover` | multi-node | a real orchestrated failover, last |
@@ -134,13 +220,17 @@ serve every suite: `valkey_pass`, `valkey_port`, `bind`, `appendonly`,
 `extra_config` (`directive=value` pairs), `config_version`, `firewall`,
 `sentinel`, `service_name`, `sentinel_port`, `quorum`, `down_after_ms`,
 `failover_timeout_ms`, `parallel_syncs`, `sentinel_count`,
-`sentinel_replicas`, `sentinel_requirepass`, `primary_ip`, and
-`members`.
+`sentinel_replicas`, `sentinel_requirepass`, `primary_ip`,
+`members`, and for instances `instances` (`name:port` pairs),
+`instance_config` (`name:directive=value` pairs), `instance_pass`,
+`instance_pass_names` and `instance_firewall`.
 
-`kitchen.yml` runs the single-node suites on AlmaLinux 9 and 10:
-`default` (a bare unauthenticated server) and `server_sentinel`, which
+`kitchen.yml` runs the single-node suites on AlmaLinux 9 and 10. The
+first two are `default` (a bare unauthenticated server) and `server_sentinel`, which
 exercises auth, `bind`, AOF, the eviction policy, an extra config
-directive and non-default sentinel timings.
+directive and non-default sentinel timings. The third suite, `instances`,
+runs the packaged server next to two `valkey@` instances: an
+unpersisted LRU cache and an authenticated AOF store.
 
 ### Multi-node
 

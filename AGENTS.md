@@ -45,6 +45,34 @@ Consequences worth remembering:
   files via temp-file-plus-rename, which lands at 0644. Ownership survives;
   what actually contains the passwords is `/etc/valkey` being `0750`.
 
+## Instances and the conflict guard
+
+`instance false` (the default) is the packaged `valkey.service` and
+`/etc/valkey/valkey.conf`, and there is only one per host. `instance
+true` makes the resource name a namespace: `valkey@<name>.service` from
+the template unit this cookbook writes, `/etc/valkey/<name>.conf`,
+`/var/lib/valkey/<name>`. Keep the openstack tier on the packaged unit,
+because the operator tooling and osl-openstack's NRPE checks read
+`/etc/valkey/valkey.conf`.
+
+`claim!` in the resource keeps, in `node.run_state`, the settings each
+unit was declared with and which unit owns each port. It raises on a
+mismatch because the seed-once template would otherwise ignore the
+second declaration without any sign. The error lists **keys only**:
+settings include `pass`, and converge errors end up in logs and chat.
+`save`/`maxmemory` and the same keys in `config` normalise to one form, so
+the two spellings don't count as a conflict.
+
+The marker and config naming (`/etc/valkey/.<conf basename>.chef` beside
+each config) is a contract with osl-prometheus: its exporter recipe finds
+local servers, their port, bind and `requirepass` that way, and registers
+the scrape targets itself. `node['osl-valkey']['instances']` only names
+them. Don't rename either without changing it there too.
+
+`vm.overcommit_memory` is applied only for a server that forks (AOF,
+snapshots, replication) and is never removed by the resource, since
+another server on the host may still need it.
+
 ## Operator tooling
 
 `osl_valkey_sentinel` installs `valkey-status` and `valkey-failover` (Ruby

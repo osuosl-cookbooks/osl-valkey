@@ -18,6 +18,9 @@ describe 'osl-valkey::default' do
       it { is_expected.to install_package 'valkey' }
       it { is_expected.to enable_service 'valkey' }
       it { is_expected.to start_service 'valkey' }
+      # No save line, so valkey's default snapshots fork
+      it { is_expected.to apply_sysctl('vm.overcommit_memory').with(value: '1') }
+      it { is_expected.to create_file('/etc/systemd/system/valkey.service.d/restart.conf') }
 
       it do
         is_expected.to create_template('/etc/valkey/valkey.conf').with(

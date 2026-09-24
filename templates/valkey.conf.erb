@@ -6,8 +6,8 @@ bind <%= @bind %>
 <% end -%>
 port <%= @port %>
 protected-mode yes
-dir /var/lib/valkey
-logfile /var/log/valkey/valkey.log
+dir <%= @dir %>
+logfile <%= @logfile %>
 appendonly <%= @appendonly ? 'yes' : 'no' %>
 <% if @maxmemory_policy -%>
 maxmemory-policy <%= @maxmemory_policy %>
