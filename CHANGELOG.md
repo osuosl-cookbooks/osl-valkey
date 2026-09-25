@@ -2,6 +2,10 @@
 
 This file is used to list changes made in each version of the osl-valkey cookbook.
 
+2.0.0 (2026-09-25)
+------------------
+- Run several valkeys per host as named instances
+
 1.0.0 (2026-07-29)
 ------------------
 - Add osl_valkey and osl_valkey_sentinel resources

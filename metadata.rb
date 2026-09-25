@@ -6,7 +6,7 @@ description       'Installs/Configures valkey server and sentinel'
 issues_url        'https://github.com/osuosl-cookbooks/osl-valkey/issues'
 source_url        'https://github.com/osuosl-cookbooks/osl-valkey'
 chef_version      '>= 18.0'
-version           '1.0.0'
+version           '2.0.0'
 
 depends           'osl-firewall'
 
