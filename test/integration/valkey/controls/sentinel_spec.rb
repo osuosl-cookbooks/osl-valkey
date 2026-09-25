@@ -21,6 +21,11 @@ control 'sentinel' do
     it { should be_running }
   end
 
+  describe command('systemctl show -p Restart,RestartUSec valkey-sentinel.service') do
+    its('stdout') { should match(/^Restart=on-failure$/) }
+    its('stdout') { should match(/^RestartUSec=5s$/) }
+  end
+
   describe port(sentinel_port.to_i) do
     it { should be_listening }
     its('protocols') { should include 'tcp' }

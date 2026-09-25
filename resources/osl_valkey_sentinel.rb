@@ -53,6 +53,18 @@ action :create do
 
   package 'valkey'
 
+  directory '/etc/systemd/system/valkey-sentinel.service.d'
+
+  file '/etc/systemd/system/valkey-sentinel.service.d/restart.conf' do
+    content osl_valkey_restart_drop_in
+    notifies :run, 'execute[valkey-sentinel: daemon-reload]', :immediately
+  end
+
+  execute 'valkey-sentinel: daemon-reload' do
+    command 'systemctl daemon-reload'
+    action :nothing
+  end
+
   # Declared before the seed so it can be restarted via :immediately
   # (unified_mode executes in declaration order).
   service 'valkey-sentinel' do

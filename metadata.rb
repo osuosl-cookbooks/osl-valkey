@@ -12,4 +12,4 @@ depends           'osl-firewall'
 
 # One line, not one per release: supports keys on the platform name, so
 # a second almalinux line silently replaces the first.
-supports          'almalinux', '>= 9.0'
+supports          'almalinux', '>= 9.7'

@@ -23,6 +23,11 @@ control 'server' do
     it { should be_running }
   end
 
+  describe command('systemctl show -p Restart,RestartUSec valkey.service') do
+    its('stdout') { should match(/^Restart=on-failure$/) }
+    its('stdout') { should match(/^RestartUSec=5s$/) }
+  end
+
   describe port(port.to_i) do
     it { should be_listening }
     its('protocols') { should include 'tcp' }

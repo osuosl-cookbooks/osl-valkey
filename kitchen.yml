@@ -51,3 +51,20 @@ suites:
         service_name: testlocks
         down_after_ms: 3000
         failover_timeout_ms: 30000
+  - name: instances
+    run_list:
+      - recipe[valkey_test::instances]
+    verifier:
+      inspec_tests:
+        - test/integration/valkey
+      controls:
+        - server
+        - firewall
+        - instances
+      inputs:
+        bind: 127.0.0.1
+        instances: cache:6380,locks:6381
+        instance_firewall: locks:6381
+        instance_pass: valkey-test
+        instance_pass_names: locks
+        instance_config: cache:maxmemory=67108864,cache:save=,cache:maxmemory-policy=allkeys-lru,locks:appendonly=yes,locks:maxmemory-policy=noeviction
